@@ -597,6 +597,16 @@ button.din{cursor:pointer}
 .papel-fixo{font-size:13px;color:var(--ink3);padding:0 6px}
 @container pane (max-width:760px){.mp-wrap{grid-template-columns:minmax(0,1fr)}.mp-side{max-height:none;order:2}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+.on-ov,#on-ov{position:fixed;inset:0;z-index:500;background:#0c1424;display:grid;place-items:center;padding:20px}
+#on-ov[hidden]{display:none}
+.on-card{width:min(400px,100%);background:var(--p2);border:1px solid var(--line2);border-radius:16px;padding:26px;display:flex;flex-direction:column;gap:12px}
+.on-card h1{font:700 30px/1 var(--tit);color:var(--bronze2)}
+.on-card p{margin:0}
+.on-card .btn.pri{min-height:44px}
+#on-st{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:400;background:var(--p3);border:1px solid var(--line2);border-radius:99px;padding:6px 16px;font-size:14px}
+#on-st.ruim{border-color:var(--red);color:#ffd0ca}
+#on-st[hidden]{display:none}
+body.online .roteiro,body.online a.tbtn,body.online #restaurar,body.online .aviso,body.online [data-modo=lado]{display:none!important}
 </style>
 </head>
 <body>
@@ -861,12 +871,17 @@ function seed() {
   };
 }
 
+const ON = {ativo: false, ultimo: new Map(), ord: new Map(), locais: new Set(['v', 'jogador', 'contas']), sb: null, uid: null,
+  quer: /^https?:$/.test(location.protocol) && !/[?&]offline\b/.test(location.search),
+  cfg: {url: 'https://ibesvyewydkjwtrwftwk.supabase.co', key: 'sb_publishable_O3GnalSNixAQNJWxm16ZMQ_YRl94XsA', base: 'delajustina.joao1', dom: 'gmail.com', admin: 'supremo'}};
+if (ON.quer) document.body.classList.add('online');
 let S = carregar();
 function carregar() {
   try { const t = JSON.parse(localStorage.getItem(KEY)); if (t && (t.v === 6 || t.v === 7) && Array.isArray(t.personagens)) return t; } catch (e) {}
   return seed();
 }
 function salvar() {
+  if (ON.ativo) { try { localStorage.setItem('jzinho-jogador', S.jogador || ''); } catch (e) {} ON.agendar(); return; }
   try { localStorage.setItem(KEY, JSON.stringify(S)); }
   catch (e) {
     try { const c = JSON.parse(JSON.stringify(S)); (c.personagens || []).concat(c.monstros || []).forEach(x => { x.retrato = null; }); (c.npcs || []).forEach(n => { n.foto = null; }); localStorage.setItem(KEY, JSON.stringify(c)); } catch (e2) {}
@@ -932,7 +947,7 @@ const nomeDe = c => (c.campos.nome || '').trim() || 'Sem nome';
 const curto = c => nomeDe(c).split(' ')[0];
 const bonusPer = (c, pe) => (c.atributos[pe.atr] || 0) >= S.regra.limiar ? S.regra.bonus : 0;
 const cfgBarra = k => (S.modelo.blocos.find(b => b.tipo === 'barra' && b.cfg.chave === k) || {cfg:{rotulo:k}}).cfg;
-function log(ator, alvo, txt) { S.historico.push({sessao: S.campanha.sessao, t: agora(), ator, alvo, txt}); }
+function log(ator, alvo, txt) { S.historico.push({id: 'h' + uid() + Date.now().toString(36), sessao: S.campanha.sessao, t: agora(), ator, alvo, txt}); }
 function garantir(c) {
   c.campos = c.campos || {}; c.barras = c.barras || {}; c.listas = c.listas || {}; c.atributos = c.atributos || {}; c.pericias = c.pericias || {}; c.efeitos = c.efeitos || []; c.poderes = c.poderes || []; c.equip = c.equip || []; if (c.dinheiro == null) c.dinheiro = 0; c.perfil = c.perfil || {}; c.xp = c.xp || {}; c.xp.atr = c.xp.atr || {}; c.xp.per = c.xp.per || {};
   for (const b of S.modelo.blocos) {
@@ -2602,12 +2617,20 @@ function modalConta(p, contaAlvo, campIdA) {
   const c = contaAlvo, cp = campIdA && campId(campIdA);
   modal(`<h2>${c ? 'Trocar senha de ' + esc(c.nome) : 'Criar login'}</h2>${c ? '' : '<p>Só você cria logins. Mande o login e a senha para a pessoa, junto com o código do convite.</p><label>Nome<input class="m-n" maxlength="30" placeholder="Nina"></label><label>Login<input class="m-l" maxlength="30" placeholder="nina" autocomplete="off"></label><label>Pode ser<select class="m-p">' + Object.entries(PAPEIS).map(([k, n]) => `<option value="${k}" ${k === 'player' ? 'selected' : ''}>${n}</option>`).join('') + '</select></label>'}<label>Senha<input class="m-s" maxlength="40" autocomplete="off"></label>${cp ? `<label class="chk"><input type="checkbox" class="m-c" checked> Já colocar em ${esc(cp.nome)}</label>` : ''}${botoes(c ? 'Salvar senha' : 'Criar login')}`, (a, box) => {
     if (a !== 'ok') return;
-    const senha = box.querySelector('.m-s').value; if (senha.length < 4) { erroM(box, 'Use uma senha com pelo menos 4 caracteres.'); return false; }
+    const senha = box.querySelector('.m-s').value, minS = ON.ativo ? 6 : 4; if (senha.length < minS) { erroM(box, `Use uma senha com pelo menos ${minS} caracteres.`); return false; }
+    if (c && ON.ativo) { ON.conta({acao: 'senha', login: c.login, senha}).then(r => { if (r.erro) { erroM(box, r.erro); return; } log('mestre', null, `Senha de ${c.nome} trocada`); salvar(); fecharModal(); toast(p, `Senha de ${c.nome} trocada.`); }); return false; }
     if (c) { c.senha = senha; log('mestre', null, `Senha de ${c.nome} trocada`); salvar(); toast(p, `Senha de ${c.nome} trocada.`); return; }
     const nome = box.querySelector('.m-n').value.trim(), login = box.querySelector('.m-l').value.trim().toLowerCase();
     if (!nome || !login) { erroM(box, 'Preencha o nome e o login.'); return false; }
     if (!/^[a-z0-9._-]+$/.test(login)) { erroM(box, 'O login aceita só letras sem acento, números, ponto, traço e sublinhado.'); return false; }
     if (S.contas.some(x => x.login === login)) { erroM(box, 'Esse login já existe.'); return false; }
+    if (ON.ativo) {
+      ON.conta({acao: 'criar', nome, login, senha, papel: box.querySelector('.m-p').value}).then(async r => {
+        if (r.erro) { erroM(box, r.erro); return; }
+        await ON.perfis(); const nv = contaId(login); if (cp && box.querySelector('.m-c').checked && nv && podeJogar(nv)) cp.jogadores.push(nv.id);
+        log('mestre', null, `Login criado: ${nome} (${login})`); fecharModal(); commit(['jogadores', 'contas'], 'mestre', `criou o login de ${nome}`, '__mestre');
+      }); return false;
+    }
     const nova = {id: 'u' + uid(), nome, login, senha, papel: box.querySelector('.m-p').value}; S.contas.push(nova);
     if (cp && box.querySelector('.m-c').checked) { if (!podeJogar(nova)) { S.contas.pop(); erroM(box, `Um login só de mestre não entra como player em ${cp.nome}. Desmarque a opção ou escolha outro tipo.`); return false; } cp.jogadores.push(nova.id); }
     log('mestre', null, `Login criado: ${nome} (${login})`); commit(['jogadores', 'contas'], 'mestre', `criou o login de ${nome}`, '__mestre');
@@ -3215,7 +3238,7 @@ function onClick(p, e) {
       const ses = sesDe(p); ses.conta = c.id; ses.tela = 'home'; salvarSes(); renderPane(p); break;
     }
     case 'esqueci': toast(p, 'Peça ao mestre da mesa para trocar a sua senha.'); break;
-    case 'sair': { const ses = sesDe(p); ses.tela = 'login'; delete ses.conta; ses.camp = null; p.vc = null; salvarSes(); closePop(); renderPane(p); break; }
+    case 'sair': { if (ON.ativo) { ON.sair(); break; } const ses = sesDe(p); ses.tela = 'login'; delete ses.conta; ses.camp = null; p.vc = null; salvarSes(); closePop(); renderPane(p); break; }
     case 'home': { const ses = sesDe(p); ses.tela = 'home'; ses.camp = null; p.vc = null; salvarSes(); closePop(); renderPane(p); p.el.querySelector('.p-body').scrollTop = 0; break; }
     case 'contas': sesDe(p).tela = 'contas'; salvarSes(); renderPane(p); break;
     case 'abrir-camp': {
@@ -3248,6 +3271,13 @@ function onClick(p, e) {
     case 'conta-rm': {
       const c = contaId(d.id); if (!c) return;
       confirmar(`Excluir o login de ${c.nome}?`, 'A pessoa não consegue mais entrar. Os personagens dela continuam guardados na campanha.', 'Excluir login', () => {
+        if (ON.ativo) {
+          ON.conta({acao: 'apagar', login: c.login}).then(async r => {
+            if (r.erro) { toast(p, r.erro); return; }
+            await ON.perfis(); S.campanhas.forEach(x => { x.jogadores = x.jogadores.filter(id => id !== c.id); }); S.pedidos = S.pedidos.filter(x => x.conta !== c.id);
+            log('mestre', null, `Login excluído: ${c.nome}`); commit(['contas', 'jogadores'], 'mestre', `excluiu o login de ${c.nome}`, '__mestre');
+          }); return;
+        }
         S.contas = S.contas.filter(x => x !== c); S.campanhas.forEach(x => { x.jogadores = x.jogadores.filter(id => id !== c.id); }); S.pedidos = S.pedidos.filter(x => x.conta !== c.id);
         log('mestre', null, `Login excluído: ${c.nome}`); commit(['contas', 'jogadores'], 'mestre', `excluiu o login de ${c.nome}`, '__mestre');
       }); break;
@@ -3297,6 +3327,12 @@ function onChange(p, e) {
       const mestra = S.campanhas.filter(x => x.mestre === c.id), joga = S.campanhas.filter(x => x.jogadores.includes(c.id));
       if (v === 'player' && mestra.length) { toast(p, `${c.nome} é mestre de ${listaNomes(mestra.map(x => x.nome))}. Passe a campanha para outro mestre antes.`); renderPane(p); return; }
       if (v === 'mestre' && joga.length) { toast(p, `${c.nome} joga em ${listaNomes(joga.map(x => x.nome))}. Tire da campanha antes de deixar só mestre.`); renderPane(p); return; }
+      if (ON.ativo) {
+        ON.conta({acao: 'papel', login: c.login, papel: v}).then(async r => {
+          if (r.erro) { toast(p, r.erro); renderPane(p); return; }
+          await ON.perfis(); log('mestre', null, `${c.nome} agora é: ${PAPEIS[v].toLowerCase()}`); salvar(); toast(p, `${c.nome}: ${PAPEIS[v].toLowerCase()}.`); renderAll(null);
+        }); break;
+      }
       c.papel = v; log('mestre', null, `${c.nome} agora é: ${PAPEIS[v].toLowerCase()}`); salvar(); toast(p, `${c.nome}: ${PAPEIS[v].toLowerCase()}.`); renderPane(p); break;
     }
     case 'meu': { const ct = contaDe(p), c = ch(v); if (ct && c && c.dono === ct.id) { S.jogador = v; salvar(); } renderPane(p); break; }
@@ -3449,7 +3485,7 @@ document.addEventListener('focusin', e => { const el = e.target.closest && e.tar
 document.addEventListener('pointerdown', () => esconderDica(), true);
 addEventListener('scroll', esconderDica, true);
 
-document.getElementById('modos').addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b || b.dataset.modo === modo) return; modo = b.dataset.modo; closePop(); montarStage(); });
+document.getElementById('modos').addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b || b.dataset.modo === modo) return; modo = b.dataset.modo; if (ON.ativo) { try { localStorage.setItem('jzinho-modo', modo); } catch (er) {} } closePop(); montarStage(); });
 document.getElementById('restaurar').addEventListener('click', () => confirmar('Restaurar o exemplo?', 'Tudo o que você mudou neste protótipo volta ao estado inicial.', 'Restaurar', () => {
   S = seed(); todos().forEach(garantir); migrar(); panes.mestre.sel = 'ari'; panes.mestre.edSel = null; panes.mestre.mon = null; panes.player.wz = null; panes.mestre.hf = '';
   SES = {}; salvarSes();
@@ -3467,6 +3503,199 @@ addEventListener('resize', () => {
 
 atualizarMemorias(); salvar();
 montarStage();
+/* ---------- online (Supabase) ---------- */
+const kEl = el => String(el.id != null ? el.id : el.cod);
+const chv = (c, id) => c + '\u0001' + id;
+const estavel = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)) ? Object.keys(x).sort().reduce((o, q) => (o[q] = x[q], o), {}) : x);
+const emailDe = login => login === ON.cfg.admin ? `${ON.cfg.base}@${ON.cfg.dom}` : `${ON.cfg.base}+${login}@${ON.cfg.dom}`;
+const contaDePerfil = q => ({id: q.login, uid: q.id, login: q.login, nome: q.nome, papel: q.papel, admin: !!q.admin});
+function linhas(est) {
+  const m = new Map(), put = (c, id, dados) => m.set(chv(c, id), {colecao: c, id, dados});
+  for (const [c, v] of Object.entries(est)) {
+    if (ON.locais.has(c) || v === undefined) continue;
+    if (Array.isArray(v) && v.every(x => x && typeof x === 'object' && !Array.isArray(x))) {
+      put(c, '__t', {__t: 'l'});
+      v.forEach((el, i) => { if (el.id == null && el.cod == null) el.id = uid(); put(c, kEl(el), Object.assign({}, el, {__o: i})); });
+    } else if (v && typeof v === 'object' && !Array.isArray(v)) put(c, '_', v);
+    else put(c, '_', {__s: 1, v});
+  }
+  return m;
+}
+function aplicarEm(est, r) {
+  const c = r.colecao, id = r.id, d = r.dados;
+  if (ON.locais.has(c)) return;
+  if (id === '__t') { if (!Array.isArray(est[c])) est[c] = []; return; }
+  if (d && d.__s) { est[c] = d.v; return; }
+  if (id === '_') { est[c] = d; return; }
+  if (!Array.isArray(est[c])) est[c] = [];
+  const el = Object.assign({}, d); delete el.__o; ON.ord.set(chv(c, id), d.__o == null ? 1e9 : d.__o);
+  const i = est[c].findIndex(x => kEl(x) === id);
+  if (i < 0) est[c].push(el); else est[c][i] = el;
+}
+function ordenar(est, c) { if (Array.isArray(est[c])) est[c].sort((a, b) => (ON.ord.has(chv(c, kEl(a))) ? ON.ord.get(chv(c, kEl(a))) : 1e9) - (ON.ord.has(chv(c, kEl(b))) ? ON.ord.get(chv(c, kEl(b))) : 1e9)); }
+function removerDe(est, c, id) { if (Array.isArray(est[c])) est[c] = est[c].filter(x => kEl(x) !== id); else if (id === '_') delete est[c]; }
+function estadoDeLinhas(rows) {
+  const novo = {}; ON.ord = new Map();
+  rows.forEach(r => aplicarEm(novo, r));
+  Object.keys(novo).forEach(c => ordenar(novo, c));
+  const base = seed(); Object.keys(base).forEach(c => { if (novo[c] === undefined && !ON.locais.has(c)) novo[c] = base[c]; });
+  novo.v = base.v;
+  return novo;
+}
+async function lerLinhas() { const out = []; for (let a = 0; ; a += 1000) { const {data, error} = await ON.sb.from('jogo').select('*').range(a, a + 999); if (error) throw error; out.push(...data); if (data.length < 1000) break; } return out; }
+async function lerPerfis() { const {data, error} = await ON.sb.from('perfis').select('*'); if (error) throw error; return data || []; }
+ON.perfis = async () => { const per = await lerPerfis(); S.contas = per.map(contaDePerfil); return per; };
+ON.conta = async body => {
+  const {data, error} = await ON.sb.functions.invoke('contas', {body});
+  if (error) { try { const j = await error.context.json(); return {erro: j.erro || 'Não deu certo.'}; } catch (e) { return {erro: 'Não consegui falar com o servidor.'}; } }
+  return data || {};
+};
+ON.sair = async () => { try { await ON.sb.auth.signOut(); } catch (e) {} try { localStorage.removeItem('jzinho-jogador'); } catch (e) {} location.reload(); };
+ON.estado = (txt, ruim) => { let e = document.getElementById('on-st'); if (!e) { e = document.createElement('div'); e.id = 'on-st'; e.setAttribute('role', 'status'); document.body.appendChild(e); } e.textContent = txt; e.className = ruim ? 'ruim' : ''; e.hidden = !txt; };
+ON.agendar = () => { clearTimeout(ON.t); ON.t = setTimeout(empurrar, 150); };
+ON.refrescar = () => {
+  clearTimeout(ON.rt);
+  ON.rt = setTimeout(function tenta() {
+    if (document.querySelector('.mp-tk.arrastando')) { ON.rt = setTimeout(tenta, 300); return; }
+    todos().forEach(garantir); renderAll(null);
+  }, 80);
+};
+async function empurrar() {
+  if (!ON.ativo) return;
+  if (ON.enviando) { ON.sujo = true; return; }
+  ON.enviando = true; ON.sujo = false;
+  try {
+    const atual = linhas(S), subir = [], apagar = [];
+    atual.forEach((r, k) => { const s = estavel(r.dados); if (ON.ultimo.get(k) !== s) subir.push([k, r, s]); });
+    ON.ultimo.forEach((s, k) => { if (!atual.has(k)) apagar.push(k); });
+    for (let i = 0; i < subir.length; i += 40) {
+      const parte = subir.slice(i, i + 40), agoraIso = new Date().toISOString();
+      const {error} = await ON.sb.from('jogo').upsert(parte.map(([k, r]) => ({colecao: r.colecao, id: r.id, dados: r.dados, atualizado: agoraIso})), {onConflict: 'colecao,id'});
+      if (error) throw error;
+      parte.forEach(([k, r, s]) => ON.ultimo.set(k, s));
+    }
+    const porCol = {}; apagar.forEach(k => { const [c, id] = k.split('\u0001'); (porCol[c] = porCol[c] || []).push(id); });
+    for (const [c, ids] of Object.entries(porCol)) {
+      const {error} = await ON.sb.from('jogo').delete().eq('colecao', c).in('id', ids);
+      if (error) throw error;
+      ids.forEach(id => ON.ultimo.delete(chv(c, id)));
+    }
+    ON.estado('');
+  } catch (e) {
+    ON.estado('Sem conexão. Tentando de novo...', true); ON.sujo = true; setTimeout(() => { if (ON.sujo) { ON.sujo = false; ON.agendar(); } }, 3000);
+  }
+  ON.enviando = false;
+  if (ON.sujo) { ON.sujo = false; ON.agendar(); }
+}
+function eventoRemoto(pl) {
+  const r = pl.eventType === 'DELETE' ? pl.old : pl.new; if (!r || r.colecao == null) return;
+  const k = chv(r.colecao, r.id);
+  if (pl.eventType !== 'DELETE' && ON.ultimo.get(k) === estavel(r.dados)) return;
+  const atual = linhas(S).get(k);
+  const sujo = (atual ? estavel(atual.dados) : null) !== (ON.ultimo.has(k) ? ON.ultimo.get(k) : null);
+  if (pl.eventType === 'DELETE') {
+    if (sujo && atual) return;
+    if (!ON.ultimo.has(k)) return;
+    ON.ultimo.delete(k); removerDe(S, r.colecao, r.id); ON.refrescar(); return;
+  }
+  const s = estavel(r.dados);
+  if (ON.ultimo.get(k) === s) return;
+  ON.ultimo.set(k, s);
+  if (sujo) return;
+  aplicarEm(S, r); ordenar(S, r.colecao); ON.refrescar();
+}
+async function ressincronizar() {
+  if (!ON.ativo) return;
+  try {
+    const rows = await lerLinhas(), noServidor = new Set();
+    rows.forEach(r => { noServidor.add(chv(r.colecao, r.id)); eventoRemoto({eventType: 'UPDATE', new: r}); });
+    [...ON.ultimo.keys()].forEach(k => { if (!noServidor.has(k)) { const [c, id] = k.split('\u0001'); eventoRemoto({eventType: 'DELETE', old: {colecao: c, id}}); } });
+    const per = await ON.perfis(); if (!per.some(q => q.id === ON.uid)) ON.sair();
+    ON.estado('');
+  } catch (e) { ON.estado('Sem conexão. Tentando de novo...', true); }
+}
+function ligarRealtime() {
+  if (ON.canal) ON.sb.removeChannel(ON.canal);
+  let primeira = true;
+  ON.canal = ON.sb.channel('jogo-ao-vivo').on('postgres_changes', {event: '*', schema: 'public', table: 'jogo'}, eventoRemoto).subscribe(st => {
+    if (st === 'SUBSCRIBED') { if (!primeira) ressincronizar(); primeira = false; ON.estado(''); }
+    else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT' || st === 'CLOSED') ON.estado('Sem conexão. Tentando de novo...', true);
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) ressincronizar(); });
+  setInterval(() => { if (!document.hidden) ON.perfis().then(() => { renderAll(null); }).catch(() => {}); }, 120000);
+}
+const ov = document.createElement('div'); ov.id = 'on-ov'; ov.hidden = true; document.body.appendChild(ov);
+const ovMostrar = html => { ov.innerHTML = html; ov.hidden = false; };
+const ovMsg = (t, extra) => ovMostrar(`<div class="on-card"><h1>Jzinho RPG</h1><p>${t}</p>${extra || ''}</div>`);
+function ovLogin(msg) {
+  ovMostrar(`<form class="on-card"><h1>Jzinho RPG</h1><p class="sub">Entre com o login e a senha que o mestre passou para você.</p><label class="campo">Login<input name="u" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="30"></label><label class="campo">Senha<input name="s" type="password" autocomplete="current-password"></label><p class="err" ${msg ? '' : 'hidden'}>${esc(msg || '')}</p><button class="btn pri" type="submit">Entrar</button></form>`);
+  const f = ov.querySelector('form'); f.u.focus();
+  f.addEventListener('submit', async e => {
+    e.preventDefault(); const u = f.u.value.trim().toLowerCase(), s = f.s.value;
+    if (!u || !s) { ovLogin('Preencha o login e a senha.'); return; }
+    ovMsg('Entrando...');
+    try {
+      const {data, error} = await ON.sb.auth.signInWithPassword({email: emailDe(u), password: s});
+      if (error || !data || !data.session) { ovLogin('Login ou senha não conferem.'); return; }
+      entrarOnline(data.session);
+    } catch (er) { ovLogin('Não consegui conectar. Veja a internet e tente de novo.'); }
+  });
+}
+function seedOnline() {
+  S = seed(); todos().forEach(garantir); migrar();
+  const mapa = {joao: 'supremo'};
+  S.campanhas = S.campanhas.filter(c => c.id !== 'arkham').map(c => Object.assign({}, c, {mestre: mapa[c.mestre] || c.mestre, jogadores: []}));
+  S.convites = []; S.pedidos = [];
+  S.personagens.forEach(c => { c.dono = mapa[c.dono] || c.dono; });
+  S.historico = [];
+}
+async function entrarOnline(session) {
+  ovMsg('Carregando o jogo...');
+  try {
+    ON.uid = session.user.id;
+    const per = await lerPerfis(), meu = per.find(q => q.id === ON.uid);
+    if (!meu) { await ON.sb.auth.signOut(); ovLogin('Essa conta ainda não foi liberada pelo mestre.'); return; }
+    const rows = await lerLinhas();
+    ON.ultimo = new Map(); ON.ativo = false;
+    if (!rows.length) {
+      if (!meu.admin) { ovMsg('O mestre ainda não abriu o jogo. Tente de novo mais tarde.', '<button class="btn" type="button" id="on-de-novo">Tentar de novo</button>'); document.getElementById('on-de-novo').onclick = () => entrarOnline(session); return; }
+      seedOnline();
+    } else {
+      S = estadoDeLinhas(rows);
+      rows.forEach(r => ON.ultimo.set(chv(r.colecao, r.id), estavel(r.dados)));
+    }
+    S.contas = per.map(contaDePerfil);
+    try { S.jogador = localStorage.getItem('jzinho-jogador') || ''; } catch (e) { S.jogador = ''; }
+    todos().forEach(garantir); migrar();
+    if (rows.length && !meu.admin) { const l = linhas(S); ON.ultimo = new Map([...l].map(([k, r]) => [k, estavel(r.dados)])); }
+    ON.ativo = true; ON.agendar();
+    const eu = contaDePerfil(meu);
+    SES = {mestre: {tela: 'home', conta: eu.id}, player: {tela: 'home', conta: eu.id}}; salvarSes();
+    for (const r of ['mestre', 'player']) Object.assign(panes[r], {vc: null, vcPane: null, wz: null, pedAberto: null, tab: r === 'mestre' ? 'mesa' : 'ficha', mapaSel: null, tool: 'mao', pal: null, undo: {}, verComo: '', celAlvo: null, zoom: null, mpScroll: null, nvAlvo: '', nvModo: 'revelar'});
+    panes.mestre.sel = (S.personagens[0] || {}).id; panes.mestre.edSel = null; panes.mestre.mon = null; panes.mestre.hf = '';
+    document.querySelectorAll('#modos [data-modo=mestre]').forEach(b => { b.hidden = !podeMestrar(eu); });
+    document.querySelectorAll('#modos [data-modo=player]').forEach(b => { b.hidden = !podeJogar(eu); });
+    let pref = ''; try { pref = localStorage.getItem('jzinho-modo') || ''; } catch (e) {}
+    modo = (pref === 'player' && podeJogar(eu)) || !podeMestrar(eu) ? 'player' : 'mestre';
+    closePop(); montarStage(); ov.hidden = true;
+    ligarRealtime();
+  } catch (e) {
+    ovMsg('Não consegui carregar o jogo. Veja a internet e tente de novo.', '<button class="btn" type="button" id="on-de-novo">Tentar de novo</button>');
+    const b = document.getElementById('on-de-novo'); if (b) b.onclick = () => entrarOnline(session);
+  }
+}
+async function onlineIniciar() {
+  if (!ON.quer) return;
+  ovMsg('Conectando...');
+  try {
+    if (!window.supabase) await new Promise((ok, ruim) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'; s.onload = ok; s.onerror = ruim; document.head.appendChild(s); });
+    ON.sb = window.supabase.createClient(ON.cfg.url, ON.cfg.key);
+    const {data} = await ON.sb.auth.getSession();
+    if (data && data.session) entrarOnline(data.session); else ovLogin();
+  } catch (e) { ovMsg('Não consegui conectar. Veja a internet e recarregue a página.'); }
+}
+
+onlineIniciar();
 }
 </script>
 </body>
