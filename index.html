@@ -3547,7 +3547,10 @@ async function lerPerfis() { const {data, error} = await ON.sb.from('perfis').se
 ON.perfis = async () => { const per = await lerPerfis(); S.contas = per.map(contaDePerfil); return per; };
 ON.conta = async body => {
   const {data, error} = await ON.sb.functions.invoke('contas', {body});
-  if (error) { try { const j = await error.context.json(); return {erro: j.erro || 'Não deu certo.'}; } catch (e) { return {erro: 'Não consegui falar com o servidor.'}; } }
+  if (error) {
+    let st = ''; try { st = error.context && error.context.status ? ' status ' + error.context.status : ''; } catch (e) {}
+    try { const j = await error.context.json(); return {erro: j.erro || ('Não deu certo.' + st + (j.message ? ' ' + j.message : ''))}; } catch (e) { return {erro: 'Não consegui falar com o servidor' + st + ' (' + (error.name || 'erro') + ': ' + (error.message || '') + ').'}; }
+  }
   return data || {};
 };
 ON.sair = async () => { try { await ON.sb.auth.signOut(); } catch (e) {} try { localStorage.removeItem('jzinho-jogador'); } catch (e) {} location.reload(); };
