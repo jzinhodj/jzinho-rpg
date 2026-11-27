@@ -873,7 +873,7 @@ function seed() {
 
 const ON = {ativo: false, ultimo: new Map(), ord: new Map(), locais: new Set(['v', 'jogador', 'contas']), sb: null, uid: null,
   quer: /^https?:$/.test(location.protocol) && !/[?&]offline\b/.test(location.search),
-  cfg: {url: 'https://ibesvyewydkjwtrwftwk.supabase.co', key: 'sb_publishable_O3GnalSNixAQNJWxm16ZMQ_YRl94XsA', base: 'delajustina.joao1', dom: 'gmail.com', admin: 'supremo'}};
+  cfg: {url: 'https://ibesvyewydkjwtrwftwk.supabase.co', key: 'sb_publishable_O3GnalSNixAQNJWxm16ZMQ_YRl94XsA', base: 'delajustina.joao1', dom: 'gmail.com', admin: 'supremo', fn: 'clever-responder'}};
 if (ON.quer) document.body.classList.add('online');
 let S = carregar();
 function carregar() {
@@ -3546,7 +3546,7 @@ async function lerLinhas() { const out = []; for (let a = 0; ; a += 1000) { cons
 async function lerPerfis() { const {data, error} = await ON.sb.from('perfis').select('*'); if (error) throw error; return data || []; }
 ON.perfis = async () => { const per = await lerPerfis(); S.contas = per.map(contaDePerfil); return per; };
 ON.conta = async body => {
-  const {data, error} = await ON.sb.functions.invoke('contas', {body});
+  const {data, error} = await ON.sb.functions.invoke(ON.cfg.fn, {body});
   if (error) {
     let st = ''; try { st = error.context && error.context.status ? ' status ' + error.context.status : ''; } catch (e) {}
     try { const j = await error.context.json(); return {erro: j.erro || ('Não deu certo.' + st + (j.message ? ' ' + j.message : ''))}; } catch (e) { return {erro: 'Não consegui falar com o servidor' + st + ' (' + (error.name || 'erro') + ': ' + (error.message || '') + ').'}; }
