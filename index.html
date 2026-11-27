@@ -881,7 +881,7 @@ function carregar() {
   return seed();
 }
 function salvar() {
-  if (ON.ativo) { try { localStorage.setItem('jzinho-jogador', S.jogador || ''); } catch (e) {} ON.agendar(); return; }
+  if (ON.ativo) { try { if (ON.camp) localStorage.setItem('jzinho-jogador:' + ON.camp, S.jogador || ''); } catch (e) {} ON.agendar(); return; }
   try { localStorage.setItem(KEY, JSON.stringify(S)); }
   catch (e) {
     try { const c = JSON.parse(JSON.stringify(S)); (c.personagens || []).concat(c.monstros || []).forEach(x => { x.retrato = null; }); (c.npcs || []).forEach(n => { n.foto = null; }); localStorage.setItem(KEY, JSON.stringify(c)); } catch (e2) {}
@@ -1016,8 +1016,10 @@ function tituloTopo() {
   const cp = modo === 'player' ? ab('player') : modo === 'mestre' ? ab('mestre') : ab('mestre') || ab('player');
   const el = document.getElementById('sessao'); if (el) el.textContent = cp ? cp.nome : 'Nenhuma campanha aberta';
 }
-const campAtual = () => campId('coroa');
-const pedidoDe = cid => (S.pedidos || []).find(x => x.conta === cid && x.camp === 'coroa');
+let CAMP = 'coroa';
+const campCarregada = id => ON.ativo ? ON.camp === id : id === 'coroa';
+const campAtual = () => campId(CAMP);
+const pedidoDe = cid => (S.pedidos || []).find(x => x.conta === cid && x.camp === CAMP);
 const memo = {mestre:{}, player:{}};
 let modo = innerWidth >= 1000 ? 'lado' : 'mestre';
 
@@ -1106,7 +1108,7 @@ function loginHTML(p) {
 }
 function statusCamp(cp, ct) {
   if (cp.mestre === ct.id) return {papel: 'Mestre', txt: 'Você é o mestre'};
-  if (cp.id !== 'coroa') return {papel: 'Player', txt: 'Você joga nesta campanha'};
+  if (!campCarregada(cp.id)) return {papel: 'Player', txt: 'Você joga nesta campanha'};
   const pcs = S.personagens.filter(c => c.dono === ct.id), ped = pedidoDe(ct.id);
   return {papel: 'Player', txt: pcs.length ? 'Você joga com ' + listaNomes(pcs.map(nomeDe)) : ped ? (ped.estado === 'ajuste' ? 'O mestre pediu ajustes na sua ficha' : 'Sua ficha espera a aprovação do mestre') : 'Você ainda não tem personagem'};
 }
@@ -1177,7 +1179,7 @@ const ABAS = {
 };
 function abasDe(p) {
   if (p.role === 'player') return ch(S.jogador) ? ABAS.player : [['criar', 'Criar personagem']];
-  const n = (S.pedidos || []).filter(x => x.camp === 'coroa').length;
+  const n = (S.pedidos || []).filter(x => x.camp === CAMP).length;
   const ne = pedidosEquip().length;
   return ABAS.mestre.map(a => a[0] === 'jogadores' && n ? ['jogadores', `Jogadores<span class="tab-n">${n}</span>`] : a[0] === 'mesa' && ne ? ['mesa', `Mesa<span class="tab-n">${ne}</span>`] : a);
 }
@@ -3224,7 +3226,7 @@ function onClick(p, e) {
     case 'wz-enviar': {
       const w = p.wz, ct = contaDe(p); if (!ct) return;
       const c = montarPersonagem(w, false), r = raca(w.racaId), antigo = pedidoDe(ct.id);
-      const ped = antigo || {id: 'pd' + uid(), conta: ct.id, camp: 'coroa'};
+      const ped = antigo || {id: 'pd' + uid(), conta: ct.id, camp: CAMP};
       Object.assign(ped, {char: c, estado: 'pendente', nota: '', quando: agora(), w: JSON.parse(JSON.stringify(Object.assign({}, w, {erro: '', passo: 1})))});
       if (!antigo) S.pedidos.push(ped);
       p.wz = null;
@@ -3243,11 +3245,20 @@ function onClick(p, e) {
     case 'contas': sesDe(p).tela = 'contas'; salvarSes(); renderPane(p); break;
     case 'abrir-camp': {
       const ses = sesDe(p), ct = contaDe(p), cp = campId(d.id); if (!ct || !cp) return;
-      ses.camp = cp.id;
-      if (cp.id !== 'coroa') ses.tela = 'exemplo';
-      else if ((p.role === 'mestre') !== (cp.mestre === ct.id)) ses.tela = 'aviso';
-      else { ses.tela = 'camp'; p.tab = p.role === 'mestre' ? 'mesa' : 'ficha'; p.wz = null; }
-      salvarSes(); renderPane(p); p.el.querySelector('.p-body').scrollTop = 0; break;
+      const abre = () => {
+        ses.camp = cp.id;
+        if (!ON.ativo && cp.id !== 'coroa') ses.tela = 'exemplo';
+        else if ((p.role === 'mestre') !== (cp.mestre === ct.id)) ses.tela = 'aviso';
+        else { ses.tela = 'camp'; p.tab = p.role === 'mestre' ? 'mesa' : 'ficha'; p.wz = null; }
+        const outro = sesDe(panes[p.role === 'mestre' ? 'player' : 'mestre']); if (ON.ativo && outro.camp !== cp.id) { outro.tela = 'home'; outro.camp = null; }
+        salvarSes(); if (ON.ativo) renderAll(null); else renderPane(p); p.el.querySelector('.p-body').scrollTop = 0;
+      };
+      if (ON.ativo && ON.camp !== cp.id) {
+        toast(p, 'Abrindo a campanha...');
+        ON.abrir(cp.id).then(r => { if (r.vazia) { toast(p, 'O mestre ainda não montou esta campanha.'); return; } abre(); }).catch(() => toast(p, 'Não consegui abrir a campanha. Tente de novo.'));
+        break;
+      }
+      abre(); break;
     }
     case 'nova-camp': {
       const ct = contaDe(p); if (!podeMestrar(ct)) return;
@@ -3282,7 +3293,7 @@ function onClick(p, e) {
         log('mestre', null, `Login excluído: ${c.nome}`); commit(['contas', 'jogadores'], 'mestre', `excluiu o login de ${c.nome}`, '__mestre');
       }); break;
     }
-    case 'cv-gerar': { const cv = {cod: novoCodigo(), camp: 'coroa', quando: agora()}; S.convites.push(cv); log('mestre', null, `Convite criado: ${cv.cod}`); commit(['jogadores'], 'mestre', 'criou um convite', '__mestre'); break; }
+    case 'cv-gerar': { const cv = {cod: novoCodigo(), camp: CAMP, quando: agora()}; S.convites.push(cv); log('mestre', null, `Convite criado: ${cv.cod}`); commit(['jogadores'], 'mestre', 'criou um convite', '__mestre'); break; }
     case 'cv-cancelar': { S.convites = S.convites.filter(x => x.cod !== d.id); log('mestre', null, `Convite cancelado: ${d.id}`); commit(['jogadores'], 'mestre', 'cancelou um convite', '__mestre'); break; }
     case 'cv-copiar': { const t = `Convite para ${S.campanha.nome} no Jzinho RPG. Código: ${d.id}`; try { navigator.clipboard.writeText(t).then(() => toast(p, 'Convite copiado.'), () => toast(p, `Código: ${d.id}`)); } catch (er) { toast(p, `Código: ${d.id}`); } break; }
     case 'jg-tirar': {
@@ -3506,13 +3517,19 @@ montarStage();
 /* ---------- online (Supabase) ---------- */
 const kEl = el => String(el.id != null ? el.id : el.cod);
 const chv = (c, id) => c + '\u0001' + id;
+const GLOB = new Set(['campanhas', 'convites', 'pedidos']);
+const colDe = k => GLOB.has(k) ? k : ON.camp + '~' + k;
+const chaveDe = col => { const i = col.indexOf('~'); if (i < 0) return GLOB.has(col) ? col : null; return col.slice(0, i) === ON.camp ? col.slice(i + 1) : null; };
+const ehCamp = k => k.split('\u0001')[0].includes('~');
 const estavel = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)) ? Object.keys(x).sort().reduce((o, q) => (o[q] = x[q], o), {}) : x);
 const emailDe = login => login === ON.cfg.admin ? `${ON.cfg.base}@${ON.cfg.dom}` : `${ON.cfg.base}+${login}@${ON.cfg.dom}`;
 const contaDePerfil = q => ({id: q.login, uid: q.id, login: q.login, nome: q.nome, papel: q.papel, admin: !!q.admin});
 function linhas(est) {
   const m = new Map(), put = (c, id, dados) => m.set(chv(c, id), {colecao: c, id, dados});
-  for (const [c, v] of Object.entries(est)) {
-    if (ON.locais.has(c) || v === undefined) continue;
+  for (const [k, v] of Object.entries(est)) {
+    if (ON.locais.has(k) || v === undefined) continue;
+    if (!GLOB.has(k) && !ON.camp) continue;
+    const c = colDe(k);
     if (Array.isArray(v) && v.every(x => x && typeof x === 'object' && !Array.isArray(x))) {
       put(c, '__t', {__t: 'l'});
       v.forEach((el, i) => { if (el.id == null && el.cod == null) el.id = uid(); put(c, kEl(el), Object.assign({}, el, {__o: i})); });
@@ -3522,27 +3539,28 @@ function linhas(est) {
   return m;
 }
 function aplicarEm(est, r) {
-  const c = r.colecao, id = r.id, d = r.dados;
-  if (ON.locais.has(c)) return;
+  const c = chaveDe(r.colecao), id = r.id, d = r.dados;
+  if (!c || ON.locais.has(c)) return;
   if (id === '__t') { if (!Array.isArray(est[c])) est[c] = []; return; }
   if (d && d.__s) { est[c] = d.v; return; }
   if (id === '_') { est[c] = d; return; }
   if (!Array.isArray(est[c])) est[c] = [];
-  const el = Object.assign({}, d); delete el.__o; ON.ord.set(chv(c, id), d.__o == null ? 1e9 : d.__o);
+  const el = Object.assign({}, d); delete el.__o; ON.ord.set(chv(r.colecao, id), d.__o == null ? 1e9 : d.__o);
   const i = est[c].findIndex(x => kEl(x) === id);
   if (i < 0) est[c].push(el); else est[c][i] = el;
 }
-function ordenar(est, c) { if (Array.isArray(est[c])) est[c].sort((a, b) => (ON.ord.has(chv(c, kEl(a))) ? ON.ord.get(chv(c, kEl(a))) : 1e9) - (ON.ord.has(chv(c, kEl(b))) ? ON.ord.get(chv(c, kEl(b))) : 1e9)); }
+function ordenar(est, c) { if (Array.isArray(est[c])) { const g = x => { const q = chv(colDe(c), kEl(x)); return ON.ord.has(q) ? ON.ord.get(q) : 1e9; }; est[c].sort((a, b) => g(a) - g(b)); } }
 function removerDe(est, c, id) { if (Array.isArray(est[c])) est[c] = est[c].filter(x => kEl(x) !== id); else if (id === '_') delete est[c]; }
 function estadoDeLinhas(rows) {
-  const novo = {}; ON.ord = new Map();
+  const novo = {};
   rows.forEach(r => aplicarEm(novo, r));
   Object.keys(novo).forEach(c => ordenar(novo, c));
-  const base = seed(); Object.keys(base).forEach(c => { if (novo[c] === undefined && !ON.locais.has(c)) novo[c] = base[c]; });
-  novo.v = base.v;
+  const base = seed(); Object.keys(base).forEach(c => { if (novo[c] === undefined && !ON.locais.has(c) && !GLOB.has(c)) novo[c] = base[c]; });
   return novo;
 }
-async function lerLinhas() { const out = []; for (let a = 0; ; a += 1000) { const {data, error} = await ON.sb.from('jogo').select('*').range(a, a + 999); if (error) throw error; out.push(...data); if (data.length < 1000) break; } return out; }
+async function lerPag(filtro) { const out = []; for (let a = 0; ; a += 1000) { const {data, error} = await filtro(ON.sb.from('jogo').select('*')).range(a, a + 999); if (error) throw error; out.push(...data); if (data.length < 1000) break; } return out; }
+const lerGlob = () => lerPag(q => q.in('colecao', [...GLOB]));
+const lerCamp = id => lerPag(q => q.like('colecao', id + '~%'));
 async function lerPerfis() { const {data, error} = await ON.sb.from('perfis').select('*'); if (error) throw error; return data || []; }
 ON.perfis = async () => { const per = await lerPerfis(); S.contas = per.map(contaDePerfil); return per; };
 ON.conta = async body => {
@@ -3592,6 +3610,7 @@ async function empurrar() {
 }
 function eventoRemoto(pl) {
   const r = pl.eventType === 'DELETE' ? pl.old : pl.new; if (!r || r.colecao == null) return;
+  const key = chaveDe(r.colecao); if (!key || ON.locais.has(key)) return;
   const k = chv(r.colecao, r.id);
   if (pl.eventType !== 'DELETE' && ON.ultimo.get(k) === estavel(r.dados)) return;
   const atual = linhas(S).get(k);
@@ -3599,24 +3618,68 @@ function eventoRemoto(pl) {
   if (pl.eventType === 'DELETE') {
     if (sujo && atual) return;
     if (!ON.ultimo.has(k)) return;
-    ON.ultimo.delete(k); removerDe(S, r.colecao, r.id); ON.refrescar(); return;
+    ON.ultimo.delete(k); removerDe(S, key, r.id); ON.refrescar(); return;
   }
   const s = estavel(r.dados);
-  if (ON.ultimo.get(k) === s) return;
   ON.ultimo.set(k, s);
   if (sujo) return;
-  aplicarEm(S, r); ordenar(S, r.colecao); ON.refrescar();
+  aplicarEm(S, r); ordenar(S, key); ON.refrescar();
 }
 async function ressincronizar() {
   if (!ON.ativo) return;
   try {
-    const rows = await lerLinhas(), noServidor = new Set();
+    const rows = (await lerGlob()).concat(ON.camp ? await lerCamp(ON.camp) : []), noServidor = new Set();
     rows.forEach(r => { noServidor.add(chv(r.colecao, r.id)); eventoRemoto({eventType: 'UPDATE', new: r}); });
     [...ON.ultimo.keys()].forEach(k => { if (!noServidor.has(k)) { const [c, id] = k.split('\u0001'); eventoRemoto({eventType: 'DELETE', old: {colecao: c, id}}); } });
     const per = await ON.perfis(); if (!per.some(q => q.id === ON.uid)) ON.sair();
     ON.estado('');
   } catch (e) { ON.estado('Sem conexão. Tentando de novo...', true); }
 }
+async function drenar() {
+  for (let i = 0; i < 30; i++) {
+    clearTimeout(ON.t);
+    if (ON.enviando) { await new Promise(r => setTimeout(r, 100)); continue; }
+    await empurrar(); if (!ON.enviando && !ON.sujo) break;
+    await new Promise(r => setTimeout(r, 100));
+  }
+}
+function campNova(cp) {
+  const guarda = S; S = seed(); todos().forEach(garantir);
+  GLOB.forEach(k => { S[k] = guarda[k]; }); S.contas = guarda.contas;
+  migrar(); const nova = S; S = guarda;
+  const out = {}; Object.keys(nova).forEach(k => { if (!GLOB.has(k) && !ON.locais.has(k)) out[k] = nova[k]; });
+  if (cp.id !== 'coroa') {
+    out.personagens = []; out.monstros = []; out.npcs = []; out.historia = []; out.historico = []; out.pedEquip = [];
+    out.mapas = [mapaNovo({id: 'mp' + uid(), nome: 'Primeiro mapa', w: 20, h: 14, tipo: 'interior', base: ''})]; out.mapaAtivo = out.mapas[0].id;
+    out.campanha = {nome: cp.nome, sessao: 1};
+  }
+  return out;
+}
+function resetPanes() {
+  for (const r of ['mestre', 'player']) Object.assign(panes[r], {vc: null, vcPane: null, wz: null, pedAberto: null, tab: r === 'mestre' ? 'mesa' : 'ficha', mapaSel: null, tool: 'mao', pal: null, undo: {}, verComo: '', celAlvo: null, zoom: null, mpScroll: null, nvAlvo: '', nvModo: 'revelar'});
+  panes.mestre.sel = (S.personagens[0] || {}).id; panes.mestre.edSel = null; panes.mestre.mon = null; panes.mestre.hf = '';
+}
+ON.abrir = async id => {
+  const cp = campId(id); if (!cp) return {vazia: true};
+  await drenar();
+  const rows = await lerCamp(id);
+  [...ON.ultimo.keys()].forEach(k => { if (ehCamp(k)) ON.ultimo.delete(k); });
+  const dono = cp.mestre === ON.eu.id;
+  if (!rows.length) {
+    if (!dono) { ON.camp = null; return {vazia: true}; }
+    ON.camp = id; const nova = campNova(cp); Object.keys(nova).forEach(k => { S[k] = nova[k]; });
+    CAMP = id; try { S.jogador = ''; } catch (e) {}
+    todos().forEach(garantir); ON.agendar();
+  } else {
+    ON.camp = id; const novo = estadoDeLinhas(rows); Object.keys(novo).forEach(k => { S[k] = novo[k]; });
+    rows.forEach(r => ON.ultimo.set(chv(r.colecao, r.id), estavel(r.dados)));
+    CAMP = id; try { S.jogador = localStorage.getItem('jzinho-jogador:' + id) || ''; } catch (e) { S.jogador = ''; }
+    todos().forEach(garantir); migrar();
+    if (!dono) linhas(S).forEach((r, k) => { if (ehCamp(k)) ON.ultimo.set(k, estavel(r.dados)); });
+    else ON.agendar();
+  }
+  resetPanes(); return {ok: true};
+};
 function ligarRealtime() {
   if (ON.canal) ON.sb.removeChannel(ON.canal);
   let primeira = true;
@@ -3647,7 +3710,7 @@ function ovLogin(msg) {
 function seedOnline() {
   S = seed(); todos().forEach(garantir); migrar();
   const mapa = {joao: 'supremo'};
-  S.campanhas = S.campanhas.filter(c => c.id !== 'arkham').map(c => Object.assign({}, c, {mestre: mapa[c.mestre] || c.mestre, jogadores: []}));
+  S.campanhas = S.campanhas.filter(c => c.id === 'coroa').map(c => Object.assign({}, c, {mestre: mapa[c.mestre] || c.mestre, jogadores: []}));
   S.convites = []; S.pedidos = [];
   S.personagens.forEach(c => { c.dono = mapa[c.dono] || c.dono; });
   S.historico = [];
@@ -3658,24 +3721,21 @@ async function entrarOnline(session) {
     ON.uid = session.user.id;
     const per = await lerPerfis(), meu = per.find(q => q.id === ON.uid);
     if (!meu) { await ON.sb.auth.signOut(); ovLogin('Essa conta ainda não foi liberada pelo mestre.'); return; }
-    const rows = await lerLinhas();
-    ON.ultimo = new Map(); ON.ativo = false;
+    const rows = await lerGlob();
+    ON.ultimo = new Map(); ON.ativo = false; ON.camp = null; ON.ord = new Map();
     if (!rows.length) {
       if (!meu.admin) { ovMsg('O mestre ainda não abriu o jogo. Tente de novo mais tarde.', '<button class="btn" type="button" id="on-de-novo">Tentar de novo</button>'); document.getElementById('on-de-novo').onclick = () => entrarOnline(session); return; }
       seedOnline();
     } else {
-      S = estadoDeLinhas(rows);
+      const g = {}; rows.forEach(r => aplicarEm(g, r)); Object.keys(g).forEach(c => ordenar(g, c));
+      S.campanhas = g.campanhas || []; S.convites = g.convites || []; S.pedidos = g.pedidos || [];
       rows.forEach(r => ON.ultimo.set(chv(r.colecao, r.id), estavel(r.dados)));
     }
     S.contas = per.map(contaDePerfil);
-    try { S.jogador = localStorage.getItem('jzinho-jogador') || ''; } catch (e) { S.jogador = ''; }
-    todos().forEach(garantir); migrar();
-    if (rows.length && !meu.admin) { const l = linhas(S); ON.ultimo = new Map([...l].map(([k, r]) => [k, estavel(r.dados)])); }
+    const eu = contaDePerfil(meu); ON.eu = eu;
     ON.ativo = true; ON.agendar();
-    const eu = contaDePerfil(meu);
     SES = {mestre: {tela: 'home', conta: eu.id}, player: {tela: 'home', conta: eu.id}}; salvarSes();
-    for (const r of ['mestre', 'player']) Object.assign(panes[r], {vc: null, vcPane: null, wz: null, pedAberto: null, tab: r === 'mestre' ? 'mesa' : 'ficha', mapaSel: null, tool: 'mao', pal: null, undo: {}, verComo: '', celAlvo: null, zoom: null, mpScroll: null, nvAlvo: '', nvModo: 'revelar'});
-    panes.mestre.sel = (S.personagens[0] || {}).id; panes.mestre.edSel = null; panes.mestre.mon = null; panes.mestre.hf = '';
+    resetPanes();
     document.querySelectorAll('#modos [data-modo=mestre]').forEach(b => { b.hidden = !podeMestrar(eu); });
     document.querySelectorAll('#modos [data-modo=player]').forEach(b => { b.hidden = !podeJogar(eu); });
     let pref = ''; try { pref = localStorage.getItem('jzinho-modo') || ''; } catch (e) {}
@@ -3697,7 +3757,6 @@ async function onlineIniciar() {
     if (data && data.session) entrarOnline(data.session); else ovLogin();
   } catch (e) { ovMsg('Não consegui conectar. Veja a internet e recarregue a página.'); }
 }
-
 onlineIniciar();
 }
 </script>
